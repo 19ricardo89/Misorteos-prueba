@@ -1859,10 +1859,23 @@
                     <span class="text-xl">💾</span>
                     <span>Descargar Copia</span>
                 </button>
+                <button id="admin-check-duplicates-btn" class="w-full px-3 py-2 nav-btn flex items-center justify-center gap-2 border-t border-yellow-600/20 pt-4 mt-4">
+    <span class="text-xl">🔍</span>
+    <span>Revisar Duplicados</span>
+</button>
             </div>
         </div>
     </div>
-
+<div id="duplicate-check-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="modal-content w-full max-w-4xl rounded-2xl shadow-2xl modal-default-bg p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl sm:text-3xl">Revisión de Sorteos Duplicados</h2>
+                <button id="close-duplicate-check-modal" class="text-yellow-600 hover:text-yellow-800 text-4xl">&times;</button>
+            </div>
+            <div id="duplicate-check-modal-body" class="space-y-6 max-h-[70vh] overflow-y-auto text-left p-2">
+                </div>
+        </div>
+    </div>
    <div id="share-options-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
     <div class="modal-content w-full max-w-3xl rounded-2xl shadow-2xl modal-default-bg p-0"> <div class="flex justify-between items-center p-6 pb-2 flex-shrink-0">
             <h2 class="text-2xl sm:text-3xl">Compartir Vitrina Personalizada</h2>
@@ -2557,7 +2570,94 @@ function setupCustomCategoryFilter() {
     const saveBlockHistory = () => localStorage.setItem('blockHistory', JSON.stringify(blockHistory));
     const saveVisGiveaways = () => localStorage.setItem('visGiveaways', JSON.stringify(visGiveaways));
     const saveCaptureBatches = () => localStorage.setItem('captureBatches', JSON.stringify(captureBatches));
+// --- [NUEVO] FUNCIONES PARA LA REVISIÓN DE DUPLICADOS DEL ADMIN ---
+    const findDuplicateGiveaways = () => {
+        const allGiveaways = Object.entries(giveaways).flatMap(([date, list]) => 
+            list.map(g => ({ ...g, date })) // Aplanamos y añadimos la fecha a cada sorteo
+        );
+        
+        const duplicates = [];
+        const checkedIds = new Set();
 
+        for (let i = 0; i < allGiveaways.length; i++) {
+            if (checkedIds.has(allGiveaways[i].id)) {
+                continue;
+            }
+            for (let j = i + 1; j < allGiveaways.length; j++) {
+                if (checkedIds.has(allGiveaways[j].id)) {
+                    continue;
+                }
+
+                const g1 = allGiveaways[i];
+                const g2 = allGiveaways[j];
+                
+                const prizeSimilarity = calculateSimilarity(g1.prize.toLowerCase(), g2.prize.toLowerCase());
+                
+                const accounts1 = (g1.accounts || []).map(a => a.toLowerCase().trim()).sort().join(',');
+                const accounts2 = (g2.accounts || []).map(a => a.toLowerCase().trim()).sort().join(',');
+
+                if (prizeSimilarity > 0.85 && accounts1 === accounts2) {
+                    // Ordenamos por fecha de adición para saber cuál es el "antiguo" y cuál el "nuevo"
+                    const [older, newer] = [g1, g2].sort((a, b) => new Date(a.addDate || 0) - new Date(b.addDate || 0));
+                    duplicates.push({ giveaway1: older, giveaway2: newer });
+                    checkedIds.add(g1.id);
+                    checkedIds.add(g2.id);
+                    break; 
+                }
+            }
+        }
+        return duplicates;
+    };
+
+    const renderDuplicateCheckModal = () => {
+        const modalBody = document.getElementById('duplicate-check-modal-body');
+        const duplicates = findDuplicateGiveaways();
+
+        if (duplicates.length === 0) {
+            modalBody.innerHTML = '<p class="text-center text-xl text-green-600 font-bold p-8">¡Felicidades! No se han encontrado sorteos duplicados en tu calendario.</p>';
+            return;
+        }
+
+        let html = '';
+        duplicates.forEach((pair, index) => {
+            const g1 = pair.giveaway1;
+            const g2 = pair.giveaway2;
+
+            const renderGiveaway = (g, title) => `
+                <div class="flex-1 p-3 bg-yellow-100/30 rounded-lg border border-yellow-500/20">
+                    <h4 class="font-bold text-yellow-800">${title} (Añadido ${g.addDate || 'N/A'})</h4>
+                    <p><strong>Fecha Sorteo:</strong> ${g.date}</p>
+                    <p><strong>Premio:</strong> ${g.prize}</p>
+                    <p><strong>Cuentas:</strong> ${(g.accounts || []).join(', ')}</p>
+                </div>
+            `;
+
+            html += `
+                <div class="p-4 border-2 border-yellow-600/30 rounded-xl shadow-lg" id="pair-${index}">
+                    <h3 class="text-lg font-bold mb-3 text-yellow-600">Par de Duplicados #${index + 1}</h3>
+                    <div class="flex flex-col md:flex-row gap-4 mb-4">
+                        ${renderGiveaway(g1, 'Sorteo Antiguo')}
+                        ${renderGiveaway(g2, 'Sorteo Nuevo')}
+                    </div>
+                    <div class="flex justify-center gap-3">
+                        <button class="manage-duplicate-btn bg-green-600 text-white py-1 px-3 rounded-md hover:bg-green-700" data-action="keep_older" data-id1="${g1.id}" data-date1="${g1.date}" data-id2="${g2.id}" data-date2="${g2.date}">Mantener Antiguo</button>
+                        <button class="manage-duplicate-btn bg-blue-600 text-white py-1 px-3 rounded-md hover:bg-blue-700" data-action="keep_newer" data-id1="${g1.id}" data-date1="${g1.date}" data-id2="${g2.id}" data-date2="${g2.date}">Mantener Nuevo</button>
+                        <button class="manage-duplicate-btn bg-red-600 text-white py-1 px-3 rounded-md hover:bg-red-700" data-action="delete_both" data-id1="${g1.id}" data-date1="${g1.date}" data-id2="${g2.id}" data-date2="${g2.date}">Eliminar Ambos</button>
+                    </div>
+                </div>
+            `;
+        });
+        modalBody.innerHTML = html;
+    };
+
+    const deleteGiveawayById = (id, date) => {
+        if (giveaways[date]) {
+            giveaways[date] = giveaways[date].filter(g => g.id !== id);
+            if (giveaways[date].length === 0) {
+                delete giveaways[date];
+            }
+        }
+    };
     const getConfidenceEmoji = (score) => {
         if (score === null || score === undefined) return '❔';
         if (score >= 0.95) return '🎯'; // Muy Alta
@@ -5137,7 +5237,10 @@ Tu respuesta debe ser única y exclusivamente el siguiente objeto JSON:
     setupModal(visReviewBtn, visModal, closeVisModalBtn, renderVisModal);
     setupModal(newAdditionsBtn, newAdditionsModal, closeNewAdditionsModalBtn, renderNewAdditionsModal);
     setupModal(null, addGiveawayModal, closeAddGiveawayModalBtn); // <-- Corrección 1 (Añadir Sorteo)
-
+const adminCheckDuplicatesBtn = document.getElementById('admin-check-duplicates-btn');
+    const duplicateCheckModal = document.getElementById('duplicate-check-modal');
+    const closeDuplicateCheckModalBtn = document.getElementById('close-duplicate-check-modal');
+    setupModal(adminCheckDuplicatesBtn, duplicateCheckModal, closeDuplicateCheckModalBtn, renderDuplicateCheckModal);
     // Corrección 2 (Ayuda): Definimos las variables y llamamos a setupModal
     const helpInfoModal = document.getElementById('help-info-modal');
     const helpInfoBtn = document.getElementById('help-info-btn');
@@ -5751,7 +5854,28 @@ adminLoginForm.addEventListener('submit', (e) => {
         adminLoginForm.reset();
     }
 });
+document.getElementById('duplicate-check-modal-body').addEventListener('click', (e) => {
+        const button = e.target.closest('.manage-duplicate-btn');
+        if (!button) return;
 
+        const { action, id1, date1, id2, date2 } = button.dataset;
+
+        if (action === 'keep_older') {
+            deleteGiveawayById(id2, date2);
+            showNotification('Acción completada', 'Se ha eliminado el sorteo más nuevo.');
+        } else if (action === 'keep_newer') {
+            deleteGiveawayById(id1, date1);
+            showNotification('Acción completada', 'Se ha eliminado el sorteo más antiguo.');
+        } else if (action === 'delete_both') {
+            deleteGiveawayById(id1, date1);
+            deleteGiveawayById(id2, date2);
+            showNotification('Acción completada', 'Se han eliminado ambos sorteos.');
+        }
+
+        saveGiveaways();
+        renderCalendar();
+        renderDuplicateCheckModal(); // Volvemos a renderizar el modal para mostrar los cambios
+    });
 adminUploadBtn.addEventListener('click', (e) => { e.preventDefault(); zipUploadInput.click(); });
 adminDownloadBtn.addEventListener('click', (e) => { e.preventDefault(); downloadSourceCode(); });
 zipUploadInput.addEventListener('change', (e) => { const file = e.target.files[0]; if (file) { restoreFromBackup(file); } });
