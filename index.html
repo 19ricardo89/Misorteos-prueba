@@ -3256,353 +3256,62 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
         }, speed);
     }
     async function processImage(file) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const base64Data = event.target.result;
-            analysisImagePreview.src = base64Data;
-            const hoy = new Date();
-            const fechaFormateada = hoy.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-            const dynamicPrompt = `
-<ROL_Y_OBJETIVO>
-Actuarás como un Analista de Datos Experto en Extracción de Información Visual, especializado en sorteos de redes sociales. Tu única misión es analizar la imagen proporcionada y devolver un único objeto JSON válido, sin ningún texto, saludo o explicación adicional. La precisión, el cumplimiento de las reglas y la consistencia son de máxima prioridad.
-</ROL_Y_OBJETIVO>
+       // PEGA ESTE NUEVO CÓDIGO EN LUGAR DEL ANTERIOR
+const reader = new FileReader();
+reader.onload = async (event) => {
+    const base64Data = event.target.result;
+    analysisImagePreview.src = base64Data;
 
-<CONTEXTO_CRITICO>
-La fecha de hoy es ${fechaFormateada}. Usa esta fecha como referencia inmutable para evaluar si un sorteo ha expirado y para interpretar fechas relativas (ej: "mañana", "próximo lunes").
-</CONTEXTO_CRITICO>
+    // 1. Apuntamos a nuestra nueva función orquestadora
+    const functionUrl = '/.netlify/functions/orchestrator';
 
-<PROCESO_MENTAL_GUIADO>
-1.  **Análisis Visual y OCR:** Realiza un reconocimiento óptico de caracteres (OCR) exhaustivo para extraer todo el texto de la imagen.
-1.5. **Identificación del Autor (Máxima Prioridad):** Antes de analizar el contenido, localiza el nombre de usuario en la cabecera de la publicación (junto a la foto de perfil). Este nombre **no tendrá un '@'**. Captúralo, **añádele el '@' al principio**, y regístralo como la primera y más importante cuenta.
-2.  **Identificación de Entidades:** Identifica las demás entidades clave: Premio, Cuentas de Instagram adicionales (@mencionadas), Valor del premio y cualquier mención a fechas o plazos.
-3.  **Lógica de Fechas:** Aplica las 'REGLAS_DE_FECHA_JERARQUICAS' en el orden estricto en que se presentan para determinar la fecha correcta.
-4.  **Construcción del JSON:** Usa la información recopilada para construir el objeto JSON final.
-</PROCESO_MENTAL_GUIADO>
-<REGLAS_DE_VALIDEZ_GEOGRAFICA>
-Tu primera tarea es determinar si el sorteo es válido para un usuario en España y devolverlo en el campo \`is_spanish\`. Usa estas reglas en orden:
+    let resultData;
+    try {
+        // 2. Enviamos SOLO la imagen. El orquestador se encarga de todo lo demás.
+        const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64Data: base64Data })
+        });
 
-1.  **REGLA DE EXCLUSIÓN (INVÁLIDO):** Si el texto menciona explícitamente que el sorteo es solo para un país de Latinoamérica (Argentina, Colombia, México, Paraguay, Uruguay, etc.) o para la región "LATAM", establece \`is_spanish\` en \`false\`.
-2.  **REGLA DE INCLUSIÓN (VÁLIDO):** Si el texto menciona explícitamente "España", "Península", "Baleares" O dice que es "Internacional" / "Worldwide", establece \`is_spanish\` en \`true\`.
-3.  **REGLA POR DEFECTO (VÁLIDO):** Si ninguna de las reglas anteriores se cumple (el sorteo no especifica ninguna región), asume que es válido y establece \`is_spanish\` en \`true\`.
-</REGLAS_DE_VALIDEZ_GEOGRAFICA>
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Error en la respuesta del orquestador');
+        }
 
-<REGLAS_DE_FECHA_JERARQUICAS_V6_AI_Final>
-**Instrucción: Evalúa estas reglas en orden descendente. La PRIMERA regla que se cumpla determina el resultado y finaliza el análisis de fechas.**
+        // 3. Recibimos el JSON final y ensamblado, listo para usar
+        const finalGiveawayData = await response.json();
 
-**PRIORIDAD 1. PRIORIDAD MÁXIMA E INELUDIBLE: Fecha con Hora Específica.**
--   **Condición Indispensable:** El texto DEBE contener AMBOS elementos: una fecha clara de finalización Y una hora específica. Si esta regla se cumple, IGNORA TODAS LAS DEMÁS SIN EXCEPCIÓN (ej: "hasta el 26 a las 14:00h", "finaliza el 30 a las 22:00", "válido hasta el 15 a las 23:59h").
--   **Acción:**
-    -   \`date\` = La fecha exacta mencionada (ej: "2025-08-26").
-    -   \`ends_at_time\` = La hora exacta extraída (ej: "14:00h").
-    -   \`is_priority_time\` = \`true\` si la hora NO es "23:59", "00:00" o "medianoche". En caso contrario, \`false\`.
+        // 4. Mantenemos tu lógica para comprobar duplicados y buscar precios aquí en el frontend
+        const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
+        let priceInfo = { prize: finalGiveawayData.prize, value: finalGiveawayData.price, url: finalGiveawayData.url };
 
-**PRIORIDAD 2: Conflicto de Fechas (Cierre vs. Anuncio).**
--   **Condición Indispensable:** El texto DEBE contener explícitamente DOS fechas distintas: una para el FIN/CIERRE del sorteo y otra, posterior, para el ANUNCIO de ganadores (ej: "termina el 27 y el ganador se dirá el 28").
--   **Acción:** La fecha de cierre tiene prioridad absoluta.
-    -   \`date\` = La fecha de CIERRE mencionada (ej: "2025-08-27").
-    -   \`ends_at_time\` = null.
-    -   \`is_priority_time\` = \`false\`.
+        if (!finalGiveawayData.price) {
+            priceInfo = await searchPrizeValue(finalGiveawayData);
+        }
 
-**PRIORIDAD 3: Regla de Fecha Única (Sin Hora).**
--   **Condición:** El texto NO cumple las reglas anteriores y contiene UNA SOLA mención de fecha relevante (ya sea de fin o de anuncio de ganadores).
--   **Acción:** Se anota siempre el día anterior para asegurar la participación.
-    -   \`date\` = El día **ANTERIOR** al mencionado (ej: si dice 28 o 30, anota 27 o 29 respectivamente).
-    -   \`ends_at_time\` = null.
-    -   \`is_priority_time\` = \`false\`.
+        // Asignamos el estado final basándonos en la lógica
+        if (finalGiveawayData.status === 'not_a_giveaway') {
+             resultData = { ...finalGiveawayData, prize: 'No es un sorteo', status: 'not_a_giveaway', originalFile: file };
+        } else if (existingGiveaway) {
+            resultData = { ...finalGiveawayData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, status: 'duplicate', originalGiveaway: existingGiveaway, originalFile: file };
+        } else {
+            resultData = { ...finalGiveawayData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, status: 'valid', originalFile: file };
+        }
 
-**PRIORIDAD 4: Sin Fecha Válida.**
--   **Condición:** Si ninguna de las reglas anteriores se puede aplicar.
--   **Acción:**
-    -   \`date\` = null.
-    -   \`status\` = "no_date".
-</REGLAS_DE_FECHA_JERARQUICAS_V6_AI_Final>
+    } catch (error) {
+        console.error(`Error al analizar la imagen ${file.name}:`, error);
+        resultData = { prize: 'Error de análisis', status: 'api_error', error: error.message, originalFile: file };
+        if (file) {
+            giveawaysWithErrors.push(file);
+        }
+    }
 
-<REGLAS_ADICIONALES_DE_EXTRACCION>
-- **Cuentas (Extracción Inteligente y Completa):**
-1.  **Prioridad 1 MAXIMA E INELUDIBLE (Cuenta Principal/Autor):** Identifica el nombre de usuario que aparece en la **cabecera de la publicación**, usualmente al lado de la foto de perfil. **Importante: este nombre de usuario aparecerá sin el símbolo '@' delante.** Debes capturarlo igualmente y **añadirle tú mismo el '@'** al principio antes de incluirlo en la lista de cuentas. Este es el **autor** del post y su captura es obligatoria.
-    2.  **Prioridad 2 (Cuentas Adicionales):** Además de la principal, extrae cualquier otra cuenta mencionada en el texto como requisito para participar (ej: "sigue a...", "en colaboración con...").
-    3.  **Reglas de Exclusión (MUY IMPORTANTE):** Ignora activamente cualquier nombre de usuario que provenga de la sección de comentarios o de la sección de "Me gusta".
+    // 5. Renderizamos la tarjeta con el resultado final
+    renderInteractiveCard(resultData);
+};
+reader.readAsDataURL(file);
 
-- **REGLAS DE EXTRACCIÓN Y SÍNTESIS DEL PREMIO:**
-    1.  **Objetivo:** Tu objetivo es crear un campo \`prize\` que sea conciso (máximo 15-20 palabras), descriptivo y de alto valor informativo. Debe caber en una sola línea.
-    2.  **Síntesis de Información:** Debes sintetizar la información del texto del post Y la información visual de la imagen (logos, empaques de productos, marcas visibles).
-    3.  **Jerarquía de Resumen (si el texto es muy largo):**
-        -   **Primero:** Menciona siempre los artículos de alto valor de forma explícita (ej: "PS5", "iPhone 16", "Thermomix").
-        -   **Segundo:** Usa las marcas importantes que identifiques en la imagen para describir lotes genéricos (ej: "Lote de productos solares Nivea" en lugar de "lote de productos para el verano").
-        -   **Tercero:** Agrupa elementos variados bajo un término descriptivo (ej: "Lote de merchandising", "Pack de material escolar", "Cesta de productos gourmet").
-        -   **Cuarto:** Describe experiencias de forma clara y breve (ej: "Estancia en hotel para dos", "Cena degustación").
-    4.  **Ejemplos Prácticos:**
-        -   *Si el texto dice "Sorteamos un súper lote para que te cuides este verano bajo el sol" y la imagen muestra 5 botes de Nivea Sun:* \`prize\` debe ser "Lote de productos solares Nivea".
-        -   *Si el texto dice "Gana una camiseta exclusiva, una gorra, una sudadera y una increíble PlayStation 5":* \`prize\` debe ser "Lote de merchandising y una PS5".
-        -   *Si el texto dice "Un fin de semana con todos los gastos pagados en el maravilloso Hotel Palace de la Costa Brava para dos personas con acceso completo al spa y desayuno incluido":* \`prize\` debe ser "Estancia de fin de semana en hotel de lujo para dos".
-
-- **Precio:** Si ves un valor monetario explícito en la imagen (ej: "valorado en 150€", "premio de 500€"), extráelo. Si no, déjalo como \`null\`.
-<REGLAS_DE_CATEGORIZACION_V9_PLANA>
-**Instrucción: Evalúa en orden descendente. La primera regla que coincida define la categoría y finaliza el proceso.**
-
-1.  Si es una pala, paletero o material de pádel -> "padel"
-2.  Si es un viaje largo, vuelo o crucero -> "viajes-internacionales"
-3.  Si es una estancia de varias noches en hotel, apartamento o casa rural -> "viajes-nacionales"
-4.  Si es una estancia corta (1-2 noches) o una caja de experiencias (Smartbox) -> "escapadas"
-5.  Si es una cena, comida o menú degustación en un restaurante -> "restauracion"
-6.  Si son entradas para conciertos o festivales de música -> "entradas-conciertos"
-7.  Si son entradas para cine, teatro, partidos de fútbol o eventos culturales -> "entradas-eventos"
-8.  Si son entradas para parques de atracciones o acuáticos -> "parques-tematicos"
-9.  Si es una experiencia como una cata de vino, paseo en barco o un taller -> "actividades"
-10. Si es una consola (PS5, Switch), videojuego o silla gamer -> "gaming"
-11. Si es un smartphone (iPhone, Samsung) o una tablet -> "telefonia"
-12. Si es un smartwatch (Apple Watch) o pulsera de actividad -> "wearables"
-13. Si es un portátil, PC, monitor, teclado, ratón o impresora -> "informatica"
-14. Si son auriculares (incluidos **AirPods**), altavoces o equipos de música -> "sonido"
-15. Si es un televisor (TV), cámara de fotos (Instax) o un dron -> "imagen"
-16. Si es una licencia de software o suscripción a servicios (Netflix) -> "software"
-17. Si es un componente (disco duro, RAM) o accesorio (powerbank) -> "componentes"
-18. Si es un robot de cocina (Thermomix), freidora de aire, cafetera -> "cocina"
-19. Si es una lavadora, frigorífico, lavavajillas -> "electrodomesticos"
-20. Si es un sofá, silla de escritorio, estantería -> "muebles"
-21. Si es un colchón, almohada o topper -> "descanso"
-22. Si es decoración, menaje, textiles (toallas, ropa de cama), velas -> "decoracion"
-23. Si es una aspiradora, robot aspirador o lote de productos de limpieza -> "limpieza"
-24. Si son herramientas o artículos de jardinería -> "bricolaje"
-25. Si es ropa de mujer (vestidos, blusas) -> "moda-femenina"
-26. Si es ropa de hombre (camisas, pantalones) -> "moda-masculina"
-27. Si son zapatillas casual (sneakers), zapatos o sandalias -> "calzado-moda"
-28. Si son zapatillas específicas para deporte (running, fútbol) -> "calzado-deportivo"
-29. Si son bolsos o mochilas -> "bolsos-mochilas"
-30. Si son maletas o neceseres de viaje -> "equipaje-viaje"
-31. Si son relojes, pulseras, anillos o collares -> "joyeria-relojes"
-32. Si son gafas de sol u otros pequeños complementos -> "gafas-accesorios"
-33. Si es maquillaje (paletas, labiales) o perfumes -> "maquillaje-perfumeria"
-34. Si son cremas, sérums o productos para la piel -> "cuidado-personal"
-35. Si son productos para el pelo, secadores o planchas -> "cuidado-capilar"
-36. Si es jamón, queso, aceite premium o vino -> "gourmet"
-37. Si es una cesta de la compra o lote de productos de supermercado -> "supermercado"
-38. Si son chocolates, golosinas, tartas o snacks -> "dulces-snacks"
-39. Si es un lote de bebidas (cerveza, refrescos, licores) -> "bebidas"
-40. Si es una camiseta oficial de un equipo de fútbol -> "futbol"
-41. Si es equipamiento de gimnasio o suplementación deportiva -> "fitness"
-42. Si es material de otro deporte (ciclismo, running, etc.) -> "deportes-varios"
-43. Si es una figura Funko Pop, LEGO, o merchandising de sagas -> "frikis"
-44. Si es un juego de mesa, de cartas o de rol -> "juegos-mesa"
-45. Si es un libro o cómic -> "libros-comics"
-46. Si es material de papelería (agendas) o para manualidades -> "papeleria"
-47. Si es ropa o calzado para niños -> "moda-infantil"
-48. Si son juguetes o material escolar -> "juguetes"
-49. Si son cochecitos, pañales o artículos para bebés -> "bebes"
-50. Si es comida, juguetes o accesorios para mascotas -> "mascotas"
-51. Si es una tarjeta regalo o un vale de compra -> "vales-regalo"
-52. Si es cualquier otro tipo de premio -> "otros"
-</REGLAS_DE_CATEGORIZACION_V9_PLANA>
-- **Confianza:** Evalúa tu certeza sobre la extracción de la FECHA (0.0 a 1.0). Si la fecha es explícita y clara, usa 1.0. Si es deducida o ambigua, usa un valor inferior.
-</REGLAS_ADICIONALES_DE_EXTRACCION>
-
-<EJEMPLOS_GUIADOS_DE_ALTA_PRECISION>
-A continuación se presentan ejemplos de análisis para calibrar tu lógica y asegurar la máxima precisión. La fecha de referencia para estos ejemplos es 28 de agosto de 2025.
-
-<EJEMPLO_1: Prioridad 1 - Fecha con Hora Específica y Prioritaria>
-- Texto de entrada: "¡Sorteamos un pack gaming! Para participar, sigue a @techstore y @gamerzone. Tienes hasta el 15 de septiembre a las 20:00h para apuntarte."
-- JSON de salida esperado:
-{
-  "prize": "Pack gaming",
-  "accounts": ["@techstore", "@gamerzone"],
-  "date": "2025-09-15",
-  "price": null,
-  "ends_at_time": "20:00h",
-  "is_priority_time": true,
-  "status": "valid",
-  "is_spanish": true,
-  "prize_category": "gaming",
-  "winner_count": 1,
-  "confidence_score": 1.0
-}
-</EJEMPLO_1>
-
-<EJEMPLO_2: Prioridad 1 - Fecha con Hora Estándar de Fin de Día>
-- Texto de entrada: "Gana un viaje a Roma para dos personas. Sigue a @viajesporelmundo. El sorteo finaliza el 30 de agosto a las 23:59h."
-- JSON de salida esperado:
-{
-  "prize": "Viaje a Roma para dos personas",
-  "accounts": ["@viajesporelmundo"],
-  "date": "2025-08-30",
-  "price": null,
-  "ends_at_time": "23:59h",
-  "is_priority_time": false,
-  "status": "valid",
-  "is_spanish": true,
-  "prize_category": "viajes",
-  "winner_count": 1,
-  "confidence_score": 1.0
-}
-</EJEMPLO_2>
-
-<EJEMPLO_3: Prioridad 2 - Conflicto de Fechas (Cierre vs Anuncio)>
-- Texto de entrada: "¡Sorteo de una pala de pádel Siux! Sigue a @padelpro. El plazo para participar termina el día 10 de octubre. Anunciaremos al ganador el 11 de octubre."
-- JSON de salida esperado:
-{
-  "prize": "Pala de pádel Siux",
-  "accounts": ["@padelpro"],
-  "date": "2025-10-10",
-  "price": null,
-  "ends_at_time": null,
-  "is_priority_time": false,
-  "status": "valid",
-  "is_spanish": true,
-  "prize_category": "padel",
-  "winner_count": 1,
-  "confidence_score": 1.0
-}
-</EJEMPLO_3>
-
-<EJEMPLO_4: Prioridad 3 - Regla de Fecha Única (Día Anterior)>
-- Texto de entrada: "¡Llévate a casa esta cesta de productos de belleza! Sigue a @cosmeticsymas. Los ganadores se anunciarán el día 25 de septiembre."
-- JSON de salida esperado:
-{
-  "prize": "Cesta de productos de belleza",
-  "accounts": ["@cosmeticsymas"],
-  "date": "2025-09-24",
-  "price": null,
-  "ends_at_time": null,
-  "is_priority_time": false,
-  "status": "valid",
-  "is_spanish": true,
-  "prize_category": "belleza",
-  "winner_count": 1,
-  "confidence_score": 0.9
-}
-</EJEMPLO_4>
-
-<EJEMPLO_5: Caso Especial - Sorteo Expirado>
-- Texto de entrada: "Sorteo express: Gana un Funko Pop de Harry Potter. Sigue a @frikitienda. ¡El sorteo finaliza el 27 de agosto!"
-- JSON de salida esperado:
-{
-  "prize": "Funko Pop de Harry Potter",
-  "accounts": ["@frikitienda"],
-  "date": "2025-08-26",
-  "price": null,
-  "ends_at_time": null,
-  "is_priority_time": false,
-  "status": "expired",
-  "is_spanish": true,
-  "prize_category": "frikis",
-  "winner_count": 1,
-  "confidence_score": 0.9
-}
-</EJEMPLO_5>
-
-<EJEMPLO_6: Prioridad 4 - Sin Fecha Válida>
-- Texto de entrada: "Sorteamos un lote de productos para el hogar. Para participar solo tienes que seguir a @limpiohogar y mencionar a dos amigos. ¡Mucha suerte!"
-- JSON de salida esperado:
-{
-  "prize": "Lote de productos para el hogar",
-  "accounts": ["@limpiohogar"],
-  "date": null,
-  "price": null,
-  "ends_at_time": null,
-  "is_priority_time": false,
-  "status": "no_date",
-  "is_spanish": true,
-  "prize_category": "hogar",
-  "winner_count": 1,
-  "confidence_score": 0.0
-}
-</EJEMPLO_6>
-
-<EJEMPLO_7: Caso Especial - No es un Sorteo>
-- Texto de entrada: "¡Nuevas zapatillas Nike ya en tienda! Pásate por @streetwearshop y descubre la colección."
-- JSON de salida esperado:
-{
-  "status": "not_a_giveaway"
-}
-</EJEMPLO_7>
-
-<EJEMPLO_8: Caso Específico de Extracción de Autor sin '@'>
-- Texto de entrada: Una imagen de Instagram donde el usuario en la cabecera es "viajerofeliz" (sin el @) y en el texto del post dice: "¡Gana un viaje a la playa! Sigue a @hotelelsol y comenta..."
-- JSON de salida esperado:
-{
-  "prize": "Viaje a la playa",
-  "accounts": ["@viajerofeliz", "@hotelelsol"],
-  "date": "2025-XX-XX",
-  "price": null,
-  "ends_at_time": null,
-  "is_priority_time": false,
-  "status": "valid",
-  "is_spanish": true,
-  "prize_category": "viajes",
-  "winner_count": 1,
-  "confidence_score": 0.95
-}
-</EJEMPLO_8>
-</EJEMPLOS_GUIADOS_DE_ALTA_PRECISION>
-
-<FORMATO_DE_SALIDA_ESTRICTO>
-Tu respuesta debe ser única y exclusivamente el siguiente objeto JSON:
-{
-  "prize": "string conciso",
-  "accounts": ["@usuario1"],
-  "date": "string ('YYYY-MM-DD') | null",
-  "price": "string | null",
-  "ends_at_time": "string | null",
-  "is_priority_time": boolean,
-  "is_spanish": boolean,
-  "status": "string ('valid', 'expired', 'no_date', 'not_a_giveaway')",
-  "prize_category": "string ('categoria')",
-  "winner_count": 1,
-  "confidence_score": float
-}
-</FORMATO_DE_SALIDA_ESTRICTO>
-`;
-            
-            let resultData;
-            try {
-                const aiData = await callGeminiAPI(base64Data, dynamicPrompt);
-                
-                // --- [NUEVA LÓGICA DE DECISIÓN CON DOBLE FILTRO] ---
-                const accounts = (aiData.accounts || []).map(acc => `@${acc.replace('@', '')}`);
-
-                // 1. Comprobamos tu cortafuegos manual primero
-                const manuallyBlocked = accounts.some(acc => foreignAccounts.includes(acc));
-
-                // 2. Tomamos la decisión final
-                if (aiData.status === 'not_a_giveaway') {
-                     resultData = { prize: 'No es un sorteo', status: 'not_a_giveaway', originalFile: file };
-                
-                } else if (aiData.is_spanish === false || manuallyBlocked) {
-                    // Si la IA dice que no es válido O si una cuenta está en tu lista negra, se descarta.
-                    resultData = { ...aiData, accounts, status: 'foreign', originalFile: file };
-                
-                } else if (!aiData.date) {
-                    resultData = { ...aiData, status: 'no_date', originalFile: file };
-                
-                } else {
-                    // Si pasa ambos filtros, el sorteo es VÁLIDO. Procedemos con las comprobaciones de siempre.
-                    const giveawayDate = new Date(aiData.date);
-                    const isExpired = giveawayDate < new Date(new Date().toDateString());
-                    const existingGiveaway = isDuplicateGiveaway({ ...aiData, accounts });
-                    
-                    let priceInfo = { prize: aiData.prize, value: aiData.price, url: null };
-                    if (!aiData.price) {
-                        priceInfo = await searchPrizeValue(aiData);
-                    }
-
-                    if (existingGiveaway) {
-                        resultData = { ...aiData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, accounts, status: 'duplicate', originalGiveaway: existingGiveaway, originalFile: file };
-                    } else if (isExpired) {
-                        resultData = { ...aiData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, accounts, status: 'expired', originalFile: file };
-                    } else {
-                        resultData = { ...aiData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, accounts, status: 'valid', originalFile: file };
-                    }
-                }
-            } catch (error) {
-                console.error(`Error al analizar la imagen ${file.name}:`, error);
-                resultData = { prize: 'Error de análisis', status: 'api_error', error: error.message, originalFile: file };
-                if (file) {
-                    giveawaysWithErrors.push(file);
-                }
-            }
-            
-            renderInteractiveCard(resultData);
-        };
-        reader.readAsDataURL(file);
     }
 
     function renderInteractiveCard(resultData) {
