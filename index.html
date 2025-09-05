@@ -3262,7 +3262,7 @@ async function processImage(file) {
         const base64Data = event.target.result;
         analysisImagePreview.src = base64Data;
 
-        // La única URL que necesitamos llamar
+        // La única URL que necesitamos llamar ahora es la del orquestador
         const functionUrl = '/.netlify/functions/orchestrator';
         
         let resultData;
@@ -3281,7 +3281,7 @@ async function processImage(file) {
 
             const finalGiveawayData = await response.json();
 
-            // Lógica de duplicados (se mantiene en el frontend)
+            // La lógica de duplicados se mantiene en el frontend, lo cual es correcto
             const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
             
             if (existingGiveaway) {
