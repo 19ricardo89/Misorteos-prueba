@@ -3255,8 +3255,7 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
             }
         }, speed);
     }
-    // REEMPLAZA LA FUNCIÓN processImage ENTERA CON ESTA
-async function processImage(file) {
+ async function processImage(file) {
     const reader = new FileReader();
     reader.onload = async (event) => {
         const base64Data = event.target.result;
@@ -3303,7 +3302,6 @@ async function processImage(file) {
     };
     reader.readAsDataURL(file);
 }
-
     function renderInteractiveCard(resultData) {
         liveResultsContainer.innerHTML = '';
         let cardHTML = '';
