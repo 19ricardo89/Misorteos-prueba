@@ -1,0 +1,19 @@
+window.foreignAccounts = [
+    "nutricionista.paulajara",
+    "@padelplus.ok",
+    "@probelparaguay",
+    "@crosshairgamingbsas",
+    "@tiendapadelpy",
+    "@sheshu.home",
+    "@cafetalito",
+    "@premia2.cl",
+    "@celumaniacos_rafaela",
+    "@grandiosas.rafaela",
+    "@ferropartes_",
+    "@madereraceballos",
+    "@ofix.mx",
+    "@babolat.arg",
+    "@thermomixeras",
+    "@marimarsrl",
+    "@calubags"
+];
