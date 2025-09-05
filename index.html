@@ -3255,64 +3255,54 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
             }
         }, speed);
     }
-    async function processImage(file) {
-       // PEGA ESTE NUEVO CÓDIGO EN LUGAR DEL ANTERIOR
-const reader = new FileReader();
-reader.onload = async (event) => {
-    const base64Data = event.target.result;
-    analysisImagePreview.src = base64Data;
+    // REEMPLAZA LA FUNCIÓN processImage ENTERA CON ESTA
+async function processImage(file) {
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        const base64Data = event.target.result;
+        analysisImagePreview.src = base64Data;
 
-    // 1. Apuntamos a nuestra nueva función orquestadora
-    const functionUrl = '/.netlify/functions/orchestrator';
+        // La única URL que necesitamos llamar
+        const functionUrl = '/.netlify/functions/orchestrator';
+        
+        let resultData;
+        try {
+            // Hacemos una única llamada y esperamos el resultado completo
+            const response = await fetch(functionUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base64Data: base64Data })
+            });
 
-    let resultData;
-    try {
-        // 2. Enviamos SOLO la imagen. El orquestador se encarga de todo lo demás.
-        const response = await fetch(functionUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ base64Data: base64Data })
-        });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.details || 'Error en la respuesta del orquestador');
+            }
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Error en la respuesta del orquestador');
+            const finalGiveawayData = await response.json();
+
+            // Lógica de duplicados (se mantiene en el frontend)
+            const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
+            
+            if (existingGiveaway) {
+                resultData = { ...finalGiveawayData, status: 'duplicate', originalGiveaway: existingGiveaway, originalFile: file };
+            } else {
+                resultData = { ...finalGiveawayData, status: 'valid', originalFile: file };
+            }
+
+        } catch (error) {
+            console.error(`Error al analizar la imagen ${file.name}:`, error);
+            resultData = { prize: 'Error de análisis', status: 'api_error', error: error.message, originalFile: file };
+            if (file) {
+                giveawaysWithErrors.push(file);
+            }
         }
-
-        // 3. Recibimos el JSON final y ensamblado, listo para usar
-        const finalGiveawayData = await response.json();
-
-        // 4. Mantenemos tu lógica para comprobar duplicados y buscar precios aquí en el frontend
-        const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
-        let priceInfo = { prize: finalGiveawayData.prize, value: finalGiveawayData.price, url: finalGiveawayData.url };
-
-        if (!finalGiveawayData.price) {
-            priceInfo = await searchPrizeValue(finalGiveawayData);
-        }
-
-        // Asignamos el estado final basándonos en la lógica
-        if (finalGiveawayData.status === 'not_a_giveaway') {
-             resultData = { ...finalGiveawayData, prize: 'No es un sorteo', status: 'not_a_giveaway', originalFile: file };
-        } else if (existingGiveaway) {
-            resultData = { ...finalGiveawayData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, status: 'duplicate', originalGiveaway: existingGiveaway, originalFile: file };
-        } else {
-            resultData = { ...finalGiveawayData, price: priceInfo.value, url: priceInfo.url, prize: priceInfo.prize, status: 'valid', originalFile: file };
-        }
-
-    } catch (error) {
-        console.error(`Error al analizar la imagen ${file.name}:`, error);
-        resultData = { prize: 'Error de análisis', status: 'api_error', error: error.message, originalFile: file };
-        if (file) {
-            giveawaysWithErrors.push(file);
-        }
-    }
-
-    // 5. Renderizamos la tarjeta con el resultado final
-    renderInteractiveCard(resultData);
-};
-reader.readAsDataURL(file);
-
-    }
+        
+        // Renderizamos la tarjeta con el resultado final y completo
+        renderInteractiveCard(resultData);
+    };
+    reader.readAsDataURL(file);
+}
 
     function renderInteractiveCard(resultData) {
         liveResultsContainer.innerHTML = '';
