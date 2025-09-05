@@ -1,0 +1,8 @@
+{
+          "name": "misorteos-functions",
+          "version": "1.0.0",
+          "description": "Dependencias para las funciones de Netlify",
+          "dependencies": {
+            "node-fetch": "^3.3.2"
+          }
+        }
