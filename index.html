@@ -3270,15 +3270,20 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
                 body: JSON.stringify({ base64Data: base64Data })
             });
 
-            // ESTE ES EL CAMBIO CLAVE:
-            // Si la respuesta NO es "OK" (ej. un error 500), leemos el mensaje de error del backend.
             if (!response.ok) {
-                const errorData = await response.json(); // Leemos el JSON que envió el orchestrator
-                // Creamos un error con el mensaje detallado del backend.
-                throw new Error(errorData.details || 'Error desconocido en el backend');
+                let errorDetails = 'Error desconocido en el backend.';
+                try {
+                    // Intenta leer el JSON de error que envía el backend
+                    const errorData = await response.json();
+                    errorDetails = errorData.details || JSON.stringify(errorData);
+                } catch (e) {
+                    // Este es el CATCH para el "Unexpected end of JSON input" en el NAVEGADOR
+                    console.warn("La respuesta de error del backend no era un JSON válido o estaba vacía.");
+                    errorDetails = "No se pudo obtener el detalle del error desde el servidor. La respuesta estaba vacía.";
+                }
+                throw new Error(errorDetails);
             }
 
-            // Si todo fue bien, continuamos como antes.
             const finalGiveawayData = await response.json();
             const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
             
@@ -3290,19 +3295,13 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
 
         } catch (error) {
             console.error(`Error al analizar la imagen ${file.name}:`, error);
-            
-            // AHORA MOSTRAMOS EL ERROR DETALLADO:
-            // El `error.message` contendrá el mensaje que hemos extraído del backend.
             resultData = { 
-                prize: `Error de análisis: ${error.message}`, // Mostramos el error específico
+                prize: `Error de análisis: ${error.message}`,
                 status: 'api_error', 
                 error: error.message, 
                 originalFile: file 
             };
-            
-            if (file) {
-                giveawaysWithErrors.push(file);
-            }
+            if (file) giveawaysWithErrors.push(file);
         }
         
         renderInteractiveCard(resultData);
