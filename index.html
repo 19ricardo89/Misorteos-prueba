@@ -3260,27 +3260,26 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
     reader.onload = async (event) => {
         const base64Data = event.target.result;
         analysisImagePreview.src = base64Data;
-
-        // La única URL que necesitamos llamar ahora es la del orquestador
         const functionUrl = '/.netlify/functions/orchestrator';
         
         let resultData;
         try {
-            // Hacemos una única llamada y esperamos el resultado completo
             const response = await fetch(functionUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ base64Data: base64Data })
             });
 
+            // ESTE ES EL CAMBIO CLAVE:
+            // Si la respuesta NO es "OK" (ej. un error 500), leemos el mensaje de error del backend.
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.details || 'Error en la respuesta del orquestador');
+                const errorData = await response.json(); // Leemos el JSON que envió el orchestrator
+                // Creamos un error con el mensaje detallado del backend.
+                throw new Error(errorData.details || 'Error desconocido en el backend');
             }
 
+            // Si todo fue bien, continuamos como antes.
             const finalGiveawayData = await response.json();
-
-            // La lógica de duplicados se mantiene en el frontend, lo cual es correcto
             const existingGiveaway = isDuplicateGiveaway(finalGiveawayData);
             
             if (existingGiveaway) {
@@ -3291,13 +3290,21 @@ const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all')
 
         } catch (error) {
             console.error(`Error al analizar la imagen ${file.name}:`, error);
-            resultData = { prize: 'Error de análisis', status: 'api_error', error: error.message, originalFile: file };
+            
+            // AHORA MOSTRAMOS EL ERROR DETALLADO:
+            // El `error.message` contendrá el mensaje que hemos extraído del backend.
+            resultData = { 
+                prize: `Error de análisis: ${error.message}`, // Mostramos el error específico
+                status: 'api_error', 
+                error: error.message, 
+                originalFile: file 
+            };
+            
             if (file) {
                 giveawaysWithErrors.push(file);
             }
         }
         
-        // Renderizamos la tarjeta con el resultado final y completo
         renderInteractiveCard(resultData);
     };
     reader.readAsDataURL(file);
