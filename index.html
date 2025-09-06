@@ -2892,100 +2892,116 @@ const getCategoryInfo = (categoryKey) => {
     };
 
 const buildModal = (dateStr, modalSearchQuery = '', modalCategoryFilter = 'all') => {
-        const modalBody = document.getElementById('modal-body');
-        const notInterestedBody = document.getElementById('not-interested-body');
-        modalBody.innerHTML = '';
-        notInterestedBody.innerHTML = '';
+    const modalBody = document.getElementById('modal-body');
+    const notInterestedBody = document.getElementById('not-interested-body');
+    modalBody.innerHTML = '';
+    notInterestedBody.innerHTML = '';
 
-        // Filtramos los sorteos del día CON LOS PARÁMETROS RECIBIDOS
-        let dayGiveaways = (giveaways[dateStr] || []).filter(g => {
-            const prize = (g.prize || '').toLowerCase();
-            const searchText = modalSearchQuery.toLowerCase();
+    // Filtramos los sorteos del día CON LOS PARÁMETROS RECIBIDOS
+    let dayGiveaways = (giveaways[dateStr] || []).filter(g => {
+        const prize = (g.prize || '').toLowerCase();
+        const searchText = modalSearchQuery.toLowerCase();
 
-            if (modalSearchQuery && !prize.includes(searchText)) {
-                return false;
-            }
-            if (modalCategoryFilter !== 'all' && g.prize_category !== modalCategoryFilter) {
-                return false;
-            }
-            return true;
-        });
+        if (modalSearchQuery && !prize.includes(searchText)) {
+            return false;
+        }
+        if (modalCategoryFilter !== 'all' && g.prize_category !== modalCategoryFilter) {
+            return false;
+        }
+        return true;
+    });
+    
+    dayGiveaways.sort((a, b) => {
+        const isACompleted = !!completedGiveaways[a.id];
+        const isBCompleted = !!completedGiveaways[b.id];
+        if (isACompleted && !isBCompleted) return 1;
+        if (!isACompleted && isBCompleted) return -1;
+        const priceA = parsePrice(a.price);
+        const priceB = parsePrice(b.price);
+        return priceB - priceA;
+    });
+
+    const dayNotInterested = notInterestedGiveaways[dateStr] || [];
+
+    dayGiveaways.forEach(giveaway => {
+        const isCompleted = !!completedGiveaways[giveaway.id];
+        const itemContainer = document.createElement('div');
+        itemContainer.className = `giveaway-item p-3 rounded-lg shadow-inner flex justify-between items-center border border-yellow-600/20 relative ${isCompleted ? 'bg-green-100/30' : 'bg-yellow-100/50'}`;
         
-        dayGiveaways.sort((a, b) => {
-            const isACompleted = !!completedGiveaways[a.id];
-            const isBCompleted = !!completedGiveaways[b.id];
-            if (isACompleted && !isBCompleted) return 1;
-            if (!isACompleted && isBCompleted) return -1;
-            const priceA = parsePrice(a.price);
-            const priceB = parsePrice(b.price);
-            return priceB - priceA;
-        });
+        let accountsHTML = (giveaway.accounts || []).map(acc => `<div><a href="https://instagram.com/${acc.replace('@','')}" target="_blank" class="underline">${acc}</a></div>`).join('');
+        
+        const categoryInfo = getCategoryInfo(giveaway.prize_category);
 
-        const dayNotInterested = notInterestedGiveaways[dateStr] || [];
-
-        dayGiveaways.forEach(giveaway => {
-            const isCompleted = !!completedGiveaways[giveaway.id];
-            const itemContainer = document.createElement('div');
-            itemContainer.className = `giveaway-item p-3 rounded-lg shadow-inner flex justify-between items-center border border-yellow-600/20 relative ${isCompleted ? 'bg-green-100/30' : 'bg-yellow-100/50'}`;
-            
-            let accountsHTML = (giveaway.accounts || []).map(acc => `<div><a href="https://instagram.com/${acc.replace('@','')}" target="_blank" class="underline">${acc}</a></div>`).join('');
-            
-            const categoryInfo = getCategoryInfo(giveaway.prize_category);
-
-            itemContainer.innerHTML = `
-                <div class="flex items-start flex-1 overflow-hidden">
-                    <div class="flex flex-col items-center mr-3 flex-shrink-0">
-                        <input type="checkbox" data-giveaway-id="${giveaway.id}" class="h-6 w-6 rounded-md border-2 border-yellow-600 text-yellow-500 focus:ring-yellow-500" ${isCompleted ? 'checked' : ''}>
-                        <button class="not-interested-btn p-1 rounded-full text-lg mt-1 text-gray-400 hover:text-red-500" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}" style="display: ${isCompleted ? 'none' : 'block'};"><i class="fa-solid fa-eye-slash"></i></button>
-                        <div class="post-complete-actions flex flex-col items-center space-y-1 mt-1" style="display: ${isCompleted ? 'flex' : 'none'};">
-                            <button class="win-giveaway-btn p-1 rounded-full text-lg" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}">🏆</button>
-                            <button class="vis-giveaway-btn p-1 rounded-full text-lg" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}">🌟</button>
-                        </div>
-                    </div>
-                    <div class="overflow-hidden">
-                        <p class="text-base sm:text-lg text-yellow-900 truncate">${giveaway.prize}</p>
-                        <div class="text-sm">${accountsHTML}</div>
-                        <span class="text-xl mt-1 inline-block" title="Categoría: ${categoryInfo.name}">${categoryInfo.emoji}</span>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <div class="text-right flex-shrink-0 ml-2">
-                        ${giveaway.price ? `<a href="https://www.google.com/search?q=${encodeURIComponent(giveaway.prize)}" target="_blank" class="block font-bold">${giveaway.price}</a><span class="text-xs">Valor aprox.</span>` : ''}
-                    </div>
-                    <div class="flex flex-col items-center ml-2 space-y-1">
-                        <button class="move-giveaway-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-calendar-days"></i></button>
-                        <button class="delete-giveaway-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-trash-can"></i></button>
-                        <button class="delete-giveaway-foreign-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-globe"></i></button>
-                    </div>
-                </div>
-            `;
-            modalBody.appendChild(itemContainer);
-        });
-
-        dayNotInterested.forEach(giveaway => {
-            const itemContainer = document.createElement('div');
-            itemContainer.className = 'giveaway-item not-interested p-3 rounded-lg shadow-inner flex justify-between items-center border border-gray-400/20 bg-gray-100/30';
-            let accountsHTML = (giveaway.accounts || []).map(acc => `<div><a href="https://instagram.com/${acc.replace('@','')}" target="_blank" class="underline">${acc}</a></div>`).join('');
-            itemContainer.innerHTML = `
-                <div class="flex-1 overflow-hidden">
-                    <p class="text-base sm:text-lg text-gray-700 truncate">${giveaway.prize}</p>
-                    <div class="text-sm text-gray-600">${accountsHTML}</div>
-                </div>
-                <button class="restore-not-interested-btn p-2 rounded-full text-lg text-green-600 hover:bg-green-200" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-eye"></i></button>
-            `;
-            notInterestedBody.appendChild(itemContainer);
-        });
-
-        if (dayGiveaways.length === 0) {
-            modalBody.innerHTML = '<p class="text-center text-gray-500">No hay sorteos que coincidan con tu filtro.</p>';
+        // --- INICIO DE LA MODIFICACIÓN ---
+        let timeInfoHTML = '';
+        if (giveaway.ends_at_time) {
+            if (giveaway.is_priority_time) {
+                // Con emoji de reloj si es prioritario
+                timeInfoHTML = `<span class="text-sm font-bold text-red-600 ml-2">⏰ ${giveaway.ends_at_time}</span>`;
+            } else {
+                // Sin emoji si no es prioritario (ej. medianoche)
+                timeInfoHTML = `<span class="text-xs text-gray-500 ml-2">${giveaway.ends_at_time}</span>`;
+            }
         }
-        if (dayNotInterested.length === 0) {
-            notInterestedBody.innerHTML = '<p class="text-center text-gray-500">No has marcado ningún sorteo como no interesante para hoy.</p>';
-        }
+        // --- FIN DE LA MODIFICACIÓN ---
 
-        modal.dataset.date = dateStr;
-    };
+        itemContainer.innerHTML = `
+            <div class="flex items-start flex-1 overflow-hidden">
+                <div class="flex flex-col items-center mr-3 flex-shrink-0">
+                    <input type="checkbox" data-giveaway-id="${giveaway.id}" class="h-6 w-6 rounded-md border-2 border-yellow-600 text-yellow-500 focus:ring-yellow-500" ${isCompleted ? 'checked' : ''}>
+                    <button class="not-interested-btn p-1 rounded-full text-lg mt-1 text-gray-400 hover:text-red-500" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}" style="display: ${isCompleted ? 'none' : 'block'};"><i class="fa-solid fa-eye-slash"></i></button>
+                    <div class="post-complete-actions flex flex-col items-center space-y-1 mt-1" style="display: ${isCompleted ? 'flex' : 'none'};">
+                        <button class="win-giveaway-btn p-1 rounded-full text-lg" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}">🏆</button>
+                        <button class="vis-giveaway-btn p-1 rounded-full text-lg" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}">🌟</button>
+                    </div>
+                </div>
+                <div class="overflow-hidden">
+                    <p class="text-base sm:text-lg text-yellow-900 truncate">${giveaway.prize}</p>
+                    <div class="text-sm">${accountsHTML}</div>
+                    
+                    <div class="flex items-center mt-1">
+                        <span class="text-xl" title="Categoría: ${categoryInfo.name}">${categoryInfo.emoji}</span>
+                        ${timeInfoHTML}
+                    </div>
+                    </div>
+            </div>
+            <div class="flex items-center">
+                <div class="text-right flex-shrink-0 ml-2">
+                    ${giveaway.price ? `<a href="https://www.google.com/search?q=${encodeURIComponent(giveaway.prize)}" target="_blank" class="block font-bold">${giveaway.price}</a><span class="text-xs">Valor aprox.</span>` : ''}
+                </div>
+                <div class="flex flex-col items-center ml-2 space-y-1">
+                    <button class="move-giveaway-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-calendar-days"></i></button>
+                    <button class="delete-giveaway-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-trash-can"></i></button>
+                    <button class="delete-giveaway-foreign-btn p-1 rounded-full text-sm" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-globe"></i></button>
+                </div>
+            </div>
+        `;
+        modalBody.appendChild(itemContainer);
+    });
 
+    dayNotInterested.forEach(giveaway => {
+        const itemContainer = document.createElement('div');
+        itemContainer.className = 'giveaway-item not-interested p-3 rounded-lg shadow-inner flex justify-between items-center border border-gray-400/20 bg-gray-100/30';
+        let accountsHTML = (giveaway.accounts || []).map(acc => `<div><a href="https://instagram.com/${acc.replace('@','')}" target="_blank" class="underline">${acc}</a></div>`).join('');
+        itemContainer.innerHTML = `
+            <div class="flex-1 overflow-hidden">
+                <p class="text-base sm:text-lg text-gray-700 truncate">${giveaway.prize}</p>
+                <div class="text-sm text-gray-600">${accountsHTML}</div>
+            </div>
+            <button class="restore-not-interested-btn p-2 rounded-full text-lg text-green-600 hover:bg-green-200" data-giveaway-id="${giveaway.id}" data-giveaway-date="${dateStr}"><i class="fa-solid fa-eye"></i></button>
+        `;
+        notInterestedBody.appendChild(itemContainer);
+    });
+
+    if (dayGiveaways.length === 0) {
+        modalBody.innerHTML = '<p class="text-center text-gray-500">No hay sorteos que coincidan con tu filtro.</p>';
+    }
+    if (dayNotInterested.length === 0) {
+        notInterestedBody.innerHTML = '<p class="text-center text-gray-500">No has marcado ningún sorteo como no interesante para hoy.</p>';
+    }
+
+    modal.dataset.date = dateStr;
+};
     const openModal = (dateStr) => {
     if (navMenu.classList.contains('is-open')) {
         toggleNavMenu();
