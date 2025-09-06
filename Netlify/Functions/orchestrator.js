@@ -3,7 +3,7 @@ const path = require('path');
 
 // --- Función Auxiliar para leer los prompts de forma segura ---
 const readPromptFromFile = (fileName) => {
-    // Construye la ruta absoluta al directorio de prompts
+    // Construye la ruta absoluta al directorio de prompts para evitar problemas
     const promptDirectory = path.resolve(__dirname, '..', 'Prompt');
     const filePath = path.join(promptDirectory, fileName);
     
@@ -11,11 +11,12 @@ const readPromptFromFile = (fileName) => {
         return fs.readFileSync(filePath, 'utf8');
     } catch (error) {
         console.error(`Error al leer el archivo de prompt: ${filePath}`, error);
+        // Lanza un error claro que será capturado por el handler principal
         throw new Error(`No se pudo encontrar o leer el prompt: ${fileName}`);
     }
 };
 
-// --- Función para llamar a la API de Gemini (robusta) ---
+// --- Función para llamar a la API de Gemini (VERSIÓN ROBUSTA) ---
 const callGeminiAPI = async (prompt, base64Data = null) => {
     const fetch = (await import('node-fetch')).default;
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -40,14 +41,36 @@ const callGeminiAPI = async (prompt, base64Data = null) => {
 
         const data = await response.json();
 
+        // Si la respuesta no es OK (ej. 4xx, 5xx) o no contiene candidatos, es un error
         if (!response.ok || !data.candidates || data.candidates.length === 0) {
+            // Comprobamos si la IA bloqueó el prompt por seguridad
+            const blockReason = data.promptFeedback?.blockReason;
+            if (blockReason) {
+                throw new Error(`Llamada a la API bloqueada por seguridad: ${blockReason}`);
+            }
             console.error("Respuesta de error o inesperada de la API de Gemini:", JSON.stringify(data));
             throw new Error(`Error de la API de Gemini: ${data.error?.message || 'Respuesta inválida o sin candidatos.'}`);
         }
         
-        const text = data.candidates[0].content.parts[0].text;
+        // --- BLOQUE DE VERIFICACIÓN "ANTIFRÁGIL" ---
+        // Este bloque comprueba la respuesta ANTES de intentar usarla.
+        const candidate = data.candidates[0];
         
-        // --- Bloque de parseo seguro para asegurar que la respuesta sea un JSON válido ---
+        // 1. Verificar si la IA finalizó por una razón que no sea la esperada ("STOP")
+        if (candidate.finishReason && candidate.finishReason !== "STOP") {
+             throw new Error(`La IA finalizó por una razón inesperada: ${candidate.finishReason}. Esto suele ocurrir por filtros de seguridad internos de la IA.`);
+        }
+        
+        // 2. Verificar que la estructura de la respuesta contenga un texto válido
+        if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0] || typeof candidate.content.parts[0].text !== 'string') {
+            console.error("La respuesta de la IA no tiene el formato de texto esperado:", JSON.stringify(candidate));
+            throw new Error("La respuesta de la IA no contenía un texto válido para procesar.");
+        }
+        // --- FIN DEL BLOQUE "ANTIFRÁGIL" ---
+
+        const text = candidate.content.parts[0].text;
+        
+        // Intenta parsear la respuesta como JSON
         try {
             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
             return JSON.parse(cleanText);
