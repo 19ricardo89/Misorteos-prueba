@@ -1,8 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+// No necesitamos 'fs' ni 'path', los eliminamos para mayor limpieza.
 
-// --- INICIO: Prompts Incrustados ---
-
+// --- INICIO: Prompts Incrustados (se mantiene la estructura de expertos separados) ---
 const PROMPTS = {
   data_extractor: `Actúa como un sistema OCR y de análisis visual altamente preciso. Tu única función es procesar una imagen y devolver la información en formato JSON.
 
@@ -113,11 +111,10 @@ const PROMPTS = {
   "url": "https://ejemplo.com/producto" | null
 }`
 };
-
 // --- FIN: Prompts Incrustados ---
 
 
-// --- Función para llamar a la API de Gemini (VERSIÓN FINAL CON TODAS LAS CORRECCIONES) ---
+// --- Función para llamar a la API de Gemini (Misma función robusta) ---
 const callGeminiAPI = async (prompt, base64Data = null) => {
     const fetch = (await import('node-fetch')).default;
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -169,7 +166,7 @@ const callGeminiAPI = async (prompt, base64Data = null) => {
         }
 
         const text = candidate.content.parts[0].text;
-
+        
         try {
             return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
         } catch (parseError) {
@@ -189,8 +186,31 @@ exports.handler = async function (event, context) {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
     
+    // --- INICIO DE LA MEJORA ---
+    // Log para depuración: veremos qué llega exactamente.
+    console.log("Función invocada. Body recibido:", event.body);
+
+    if (!event.body) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'El cuerpo de la petición está vacío.' })
+        };
+    }
+
+    let parsedBody;
     try {
-        const { base64Data } = JSON.parse(event.body);
+        parsedBody = JSON.parse(event.body);
+    } catch (error) {
+        console.error("Error al parsear el JSON del body:", error);
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'El cuerpo de la petición no es un JSON válido.', details: event.body })
+        };
+    }
+    // --- FIN DE LA MEJORA ---
+
+    try {
+        const { base64Data } = parsedBody; // Usamos el cuerpo ya parseado
         if (!base64Data) {
             return { statusCode: 400, body: JSON.stringify({ error: 'No se proporcionó la imagen en formato base64.' }) };
         }
@@ -201,19 +221,10 @@ exports.handler = async function (event, context) {
 
         const fechaFormateada = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
         
-        // --- Preparamos los prompts de los expertos ---
-        const dateInputText = PROMPTS.date_expert
-            .replace('${fechaFormateada}', fechaFormateada)
-            .replace('${raw_text}', raw_text);
+        const dateInputText = PROMPTS.date_expert.replace(/\${fechaFormateada}/g, fechaFormateada).replace(/\${raw_text}/g, raw_text);
+        const prizeInputText = PROMPTS.prize_expert.replace(/\${raw_text}/g, raw_text).replace(/\${visual_description}/g, visual_description);
+        const accountsInputText = PROMPTS.accounts_expert.replace(/\${raw_text}/g, raw_text);
 
-        const prizeInputText = PROMPTS.prize_expert
-            .replace('${raw_text}', raw_text)
-            .replace('${visual_description}', visual_description);
-
-        const accountsInputText = PROMPTS.accounts_expert
-            .replace('${raw_text}', raw_text);
-
-        // --- Ejecutamos los expertos en paralelo ---
         const [dateResult, prizeResult, accountsResult] = await Promise.all([
             callGeminiAPI(dateInputText),
             callGeminiAPI(prizeInputText),
@@ -222,7 +233,6 @@ exports.handler = async function (event, context) {
 
         const partialResult = { ...dateResult, ...prizeResult, ...accountsResult };
 
-        // --- Agente Tasador (condicional) ---
         let priceResult = { price: null, winner_count: 1, appraisal_notes: "No se encontró valor explícito.", url: null };
         const priceRegex = /(\d{1,5}(?:[.,]\d{1,2})?)\s*€/;
         const priceMatch = raw_text.match(priceRegex);
@@ -232,12 +242,11 @@ exports.handler = async function (event, context) {
             priceResult.appraisal_notes = "Valor extraído directamente del texto.";
         } else {
             let appraiserPrompt = PROMPTS.price_appraiser;
-            appraiserPrompt = appraiserPrompt.replace('${prize_name}', partialResult.prize);
-            appraiserPrompt = appraiserPrompt.replace('${accounts_list}', (partialResult.accounts || []).join(', '));
+            appraiserPrompt = appraiserPrompt.replace(/\${prize_name}/g, partialResult.prize);
+            appraiserPrompt = appraiserPrompt.replace(/\${accounts_list}/g, (partialResult.accounts || []).join(', '));
             priceResult = await callGeminiAPI(appraiserPrompt);
         }
 
-        // --- Ensamblaje Final ---
         const finalResult = { ...partialResult, ...priceResult };
 
         return {
